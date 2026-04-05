@@ -1,0 +1,10 @@
+services:
+  clipboard-sync:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - CLIPBOARD_PASSWORD=${CLIPBOARD_PASSWORD}
+      - SECURE_COOKIES=${SECURE_COOKIES:-true}
+      - MAX_CONTENT_KB=${MAX_CONTENT_KB:-512}
+    restart: unless-stopped
