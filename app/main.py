@@ -15,6 +15,9 @@ if not PASSWORD:
 
 SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "true").lower() == "true"
 MAX_CONTENT_SIZE = int(os.environ.get("MAX_CONTENT_KB", "512")) * 1024
+DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "de").strip().lower()
+if DEFAULT_LANG not in ("de", "en"):
+    DEFAULT_LANG = "de"
 
 # ---------------------------------------------------------------------------
 # Session store  (in-memory, resets on container restart)
@@ -60,14 +63,18 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 async def index(request: Request):
     if not _authenticated(request):
         return RedirectResponse("/login")
-    return HTMLResponse(Path("static/index.html").read_text())
+    html = (Path("static/index.html").read_text()
+            .replace("{{DEFAULT_LANG}}", DEFAULT_LANG)
+            .replace("{{MAX_CONTENT_KB}}", str(MAX_CONTENT_SIZE // 1024)))
+    return HTMLResponse(html)
 
 
 @app.get("/login")
 async def login_page(request: Request):
     if _authenticated(request):
         return RedirectResponse("/")
-    return HTMLResponse(Path("static/login.html").read_text())
+    html = Path("static/login.html").read_text().replace("{{DEFAULT_LANG}}", DEFAULT_LANG)
+    return HTMLResponse(html)
 
 
 @app.post("/login")
@@ -145,7 +152,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             if len(data.encode()) > MAX_CONTENT_SIZE:
-                await websocket.send_text("__ERROR__:Inhalt zu groß (max 512 KB)")
+                await websocket.send_text("__ERROR__:TOO_LARGE")
                 continue
             await manager.broadcast(data, websocket)
     except WebSocketDisconnect:

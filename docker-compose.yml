@@ -7,4 +7,5 @@ services:
       - CLIPBOARD_PASSWORD=${CLIPBOARD_PASSWORD}
       - SECURE_COOKIES=${SECURE_COOKIES:-true}
       - MAX_CONTENT_KB=${MAX_CONTENT_KB:-512}
+      - DEFAULT_LANG=${DEFAULT_LANG:-de}
     restart: unless-stopped

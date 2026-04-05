@@ -18,12 +18,36 @@
       padding: 2rem 1rem;
     }
 
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.25rem;
+    }
+
     h1 {
       font-size: 1.5rem;
       font-weight: 600;
-      margin-bottom: 0.5rem;
       color: #a0c4ff;
     }
+
+    .lang-switch {
+      display: flex;
+      gap: 0.25rem;
+    }
+    .lang-btn {
+      padding: 0.2rem 0.55rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid #0f3460;
+      border-radius: 5px;
+      background: transparent;
+      color: #666;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      min-width: auto;
+    }
+    .lang-btn.active { color: #a0c4ff; border-color: #a0c4ff; }
 
     #status {
       font-size: 0.8rem;
@@ -40,7 +64,7 @@
       background: #888;
       transition: background 0.3s;
     }
-    #status-dot.connected { background: #4caf50; }
+    #status-dot.connected    { background: #4caf50; }
     #status-dot.disconnected { background: #f44336; }
 
     .card {
@@ -92,6 +116,7 @@
     #btn-paste  { background: #0f3460; color: #a0c4ff; }
     #btn-copy   { background: #a0c4ff; color: #0d1b2a; }
     #btn-clear  { background: #2a1a2e; color: #cc88ff; }
+    #btn-logout { flex: none; min-width: auto; padding: 0.3rem 0.75rem; font-size: 0.8rem; background: #2a1a2e; color: #cc88ff; }
 
     #toast {
       position: fixed;
@@ -107,10 +132,7 @@
       transition: opacity 0.25s, transform 0.25s;
       pointer-events: none;
     }
-    #toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     #last-update {
       font-size: 0.75rem;
@@ -121,36 +143,103 @@
   </style>
 </head>
 <body>
-  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;">
-    <h1 style="margin:0;">Clipboard Sync</h1>
+  <div class="topbar">
+    <h1>Clipboard Sync</h1>
+    <div class="lang-switch">
+      <button class="lang-btn" data-lang="de" onclick="setLang('de')">DE</button>
+      <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
+    </div>
     <form method="post" action="/logout" style="margin:0;">
-      <button type="submit" style="flex:none;min-width:auto;padding:0.3rem 0.75rem;font-size:0.8rem;background:#2a1a2e;color:#cc88ff;">Abmelden</button>
+      <button type="submit" id="btn-logout">–</button>
     </form>
   </div>
+
   <div id="status">
     <span id="status-dot" class="disconnected"></span>
-    <span id="status-text">Verbinde...</span>
+    <span id="status-text"></span>
   </div>
 
   <div class="card">
-    <textarea id="content" placeholder="Hier Text eingeben oder einfuegen..."></textarea>
+    <textarea id="content"></textarea>
     <div id="last-update"></div>
     <div class="actions">
-      <button id="btn-paste" title="Aus lokaler Zwischenablage einfuegen">Aus Zwischenablage einfuegen</button>
-      <button id="btn-copy"  title="In lokale Zwischenablage kopieren">In Zwischenablage kopieren</button>
-      <button id="btn-clear" title="Inhalt loeschen">Leeren</button>
+      <button id="btn-paste"></button>
+      <button id="btn-copy"></button>
+      <button id="btn-clear"></button>
     </div>
   </div>
 
   <div id="toast"></div>
 
   <script>
+    // ------------------------------------------------------------------
+    // Translations
+    // ------------------------------------------------------------------
+    const T = {
+      de: {
+        placeholder:       'Hier Text eingeben oder einfügen…',
+        btnPaste:          'Aus Zwischenablage einfügen',
+        btnCopy:           'In Zwischenablage kopieren',
+        btnClear:          'Leeren',
+        btnLogout:         'Abmelden',
+        statusConnecting:  'Verbinde…',
+        statusConnected:   'Verbunden',
+        statusDisconnected:'Getrennt – verbinde erneut…',
+        toastUpdated:      'Inhalt aktualisiert',
+        toastPasted:       'Eingefügt und synchronisiert',
+        toastCopied:       'In Zwischenablage kopiert',
+        toastDenied:       'Zugriff auf Zwischenablage verweigert',
+        toastCopyFail:     'Kopieren fehlgeschlagen',
+        toastTooLarge:     `Inhalt zu groß (max {{MAX_CONTENT_KB}} KB)`,
+        lastUpdate:        'Zuletzt empfangen',
+      },
+      en: {
+        placeholder:       'Type or paste content here…',
+        btnPaste:          'Paste from clipboard',
+        btnCopy:           'Copy to clipboard',
+        btnClear:          'Clear',
+        btnLogout:         'Log out',
+        statusConnecting:  'Connecting…',
+        statusConnected:   'Connected',
+        statusDisconnected:'Disconnected – reconnecting…',
+        toastUpdated:      'Content updated',
+        toastPasted:       'Pasted and synced',
+        toastCopied:       'Copied to clipboard',
+        toastDenied:       'Clipboard access denied',
+        toastCopyFail:     'Copy failed',
+        toastTooLarge:     `Content too large (max {{MAX_CONTENT_KB}} KB)`,
+        lastUpdate:        'Last received',
+      },
+    };
+
+    const DEFAULT_LANG = '{{DEFAULT_LANG}}';
+    let lang = localStorage.getItem('clipboard-sync-lang') || DEFAULT_LANG;
+
+    function t(key) { return (T[lang] || T['de'])[key] || key; }
+
+    function setLang(l) {
+      lang = l;
+      localStorage.setItem('clipboard-sync-lang', l);
+      document.documentElement.lang = l;
+      document.getElementById('content').placeholder  = t('placeholder');
+      document.getElementById('btn-paste').textContent = t('btnPaste');
+      document.getElementById('btn-copy').textContent  = t('btnCopy');
+      document.getElementById('btn-clear').textContent = t('btnClear');
+      document.getElementById('btn-logout').textContent = t('btnLogout');
+      document.getElementById('status-text').textContent =
+        statusConnected ? t('statusConnected') : t('statusConnecting');
+      document.querySelectorAll('.lang-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.lang === l));
+    }
+
+    // ------------------------------------------------------------------
+    // WebSocket
+    // ------------------------------------------------------------------
     const textarea   = document.getElementById('content');
     const statusDot  = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
     const lastUpdate = document.getElementById('last-update');
     const toast      = document.getElementById('toast');
-    let ws, sendTimer;
+    let ws, sendTimer, statusConnected = false;
 
     function showToast(msg, color = '#4caf50') {
       toast.textContent = msg;
@@ -160,8 +249,10 @@
     }
 
     function setStatus(connected) {
+      statusConnected = connected;
       statusDot.className = connected ? 'connected' : 'disconnected';
-      statusText.textContent = connected ? 'Verbunden' : 'Getrennt – reconnecting...';
+      document.getElementById('status-text').textContent =
+        connected ? t('statusConnected') : t('statusDisconnected');
     }
 
     function connect() {
@@ -176,20 +267,21 @@
       };
 
       ws.onmessage = (e) => {
+        if (e.data.startsWith('__ERROR__:')) {
+          const code = e.data.split(':')[1];
+          if (code === 'TOO_LARGE') showToast(t('toastTooLarge'), '#f44336');
+          return;
+        }
         textarea.value = e.data;
-        const now = new Date().toLocaleTimeString();
-        lastUpdate.textContent = `Zuletzt empfangen: ${now}`;
-        showToast('Inhalt aktualisiert');
+        lastUpdate.textContent = `${t('lastUpdate')}: ${new Date().toLocaleTimeString()}`;
+        showToast(t('toastUpdated'));
       };
     }
 
-    // Debounced send on textarea input
     textarea.addEventListener('input', () => {
       clearTimeout(sendTimer);
       sendTimer = setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(textarea.value);
-        }
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(textarea.value);
       }, 400);
     });
 
@@ -198,18 +290,18 @@
         const text = await navigator.clipboard.readText();
         textarea.value = text;
         if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
-        showToast('Eingefuegt und synchronisiert');
+        showToast(t('toastPasted'));
       } catch {
-        showToast('Zugriff auf Zwischenablage verweigert', '#f44336');
+        showToast(t('toastDenied'), '#f44336');
       }
     });
 
     document.getElementById('btn-copy').addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(textarea.value);
-        showToast('In Zwischenablage kopiert');
+        showToast(t('toastCopied'));
       } catch {
-        showToast('Kopieren fehlgeschlagen', '#f44336');
+        showToast(t('toastCopyFail'), '#f44336');
       }
     });
 
@@ -219,6 +311,9 @@
       lastUpdate.textContent = '';
     });
 
+    // Init
+    setLang(lang);
+    document.getElementById('status-text').textContent = t('statusConnecting');
     connect();
   </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clipboard Sync – Login</title>
+  <title>Clipboard Sync</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -25,7 +25,28 @@
       padding: 2rem;
       width: 100%;
       max-width: 360px;
+      position: relative;
     }
+
+    .lang-switch {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      display: flex;
+      gap: 0.25rem;
+    }
+    .lang-btn {
+      padding: 0.2rem 0.5rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid #0f3460;
+      border-radius: 5px;
+      background: transparent;
+      color: #666;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .lang-btn.active { color: #a0c4ff; border-color: #a0c4ff; }
 
     h1 {
       font-size: 1.3rem;
@@ -54,7 +75,7 @@
     }
     input[type="password"]:focus { border-color: #a0c4ff; }
 
-    button {
+    button[type="submit"] {
       width: 100%;
       margin-top: 1rem;
       padding: 0.65rem;
@@ -67,7 +88,7 @@
       cursor: pointer;
       transition: opacity 0.15s;
     }
-    button:hover { opacity: 0.88; }
+    button[type="submit"]:hover { opacity: 0.88; }
 
     .error {
       display: none;
@@ -84,15 +105,44 @@
 </head>
 <body>
   <div class="card">
+    <div class="lang-switch">
+      <button class="lang-btn" data-lang="de" onclick="setLang('de')">DE</button>
+      <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
+    </div>
+
     <h1>Clipboard Sync</h1>
+
     <form method="post" action="/login">
-      <label for="password">Passwort</label>
+      <label id="lbl-password" for="password"></label>
       <input type="password" id="password" name="password" autofocus autocomplete="current-password" />
-      <button type="submit">Anmelden</button>
-      <div class="error" id="error">Falsches Passwort</div>
+      <button type="submit" id="btn-submit"></button>
+      <div class="error" id="error"></div>
     </form>
   </div>
+
   <script>
+    const T = {
+      de: { label: 'Passwort', submit: 'Anmelden',  error: 'Falsches Passwort' },
+      en: { label: 'Password', submit: 'Log in',    error: 'Wrong password'    },
+    };
+
+    const DEFAULT_LANG = '{{DEFAULT_LANG}}';
+    let lang = localStorage.getItem('clipboard-sync-lang') || DEFAULT_LANG;
+
+    function setLang(l) {
+      lang = l;
+      localStorage.setItem('clipboard-sync-lang', l);
+      document.documentElement.lang = l;
+      const t = T[l] || T['de'];
+      document.getElementById('lbl-password').textContent = t.label;
+      document.getElementById('btn-submit').textContent   = t.submit;
+      document.getElementById('error').textContent        = t.error;
+      document.querySelectorAll('.lang-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.lang === l));
+    }
+
+    setLang(lang);
+
     if (new URLSearchParams(location.search).get('error')) {
       document.getElementById('error').style.display = 'block';
     }
