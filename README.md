@@ -16,6 +16,7 @@ Built with **FastAPI** and **WebSockets**, designed to run as a **Docker contain
 - **Real-time sync** — content appears instantly on all connected clients via WebSockets
 - **Secure** — password login, session cookies (httponly, samesite, secure), rate limiting on login attempts
 - **Configurable** — password, cookie security and upload limit via environment variables
+- **File transfer** — share files via drag & drop or file dialog, separate size limit via `MAX_FILE_MB`
 - **Multilingual** — English and German UI, configurable default via `DEFAULT_LANG`, switchable per-user in the browser
 - **Auto-reconnect** — clients reconnect automatically if the connection drops
 - **Docker-ready** — single `docker compose up -d` to deploy
@@ -59,6 +60,9 @@ SECURE_COOKIES=true
 # Maximum clipboard content size in KB (default: 512)
 MAX_CONTENT_KB=512
 
+# Maximum file upload size in MB (default: 10)
+MAX_FILE_MB=10
+
 # Default UI language: de or en (default: de)
 DEFAULT_LANG=de
 ```
@@ -89,6 +93,7 @@ Example with Pangolin: add a new tunnel resource pointing to `http://<docker-hos
 2. **Type or paste** content into the textarea — it syncs to all other open sessions automatically
 3. Use **"Paste from clipboard"** to read your local clipboard and broadcast it
 4. Use **"Copy to clipboard"** to copy the synced content to your local clipboard
+5. **Drop a file** onto the file zone (or click to select) — all connected clients get a download button instantly
 
 > **Note:** The browser Clipboard API (`readText`) requires either HTTPS or `localhost`. The paste button works fully when accessed via HTTPS. On plain HTTP you can still type/paste manually into the textarea.
 

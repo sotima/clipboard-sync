@@ -16,25 +16,18 @@
       flex-direction: column;
       align-items: center;
       padding: 2rem 1rem;
+      gap: 1rem;
     }
 
     .topbar {
       display: flex;
       align-items: center;
       gap: 1rem;
-      margin-bottom: 0.25rem;
     }
 
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: #a0c4ff;
-    }
+    h1 { font-size: 1.5rem; font-weight: 600; color: #a0c4ff; }
 
-    .lang-switch {
-      display: flex;
-      gap: 0.25rem;
-    }
+    .lang-switch { display: flex; gap: 0.25rem; }
     .lang-btn {
       padding: 0.2rem 0.55rem;
       font-size: 0.75rem;
@@ -51,15 +44,12 @@
 
     #status {
       font-size: 0.8rem;
-      margin-bottom: 1.5rem;
       display: flex;
       align-items: center;
       gap: 0.4rem;
     }
-
     #status-dot {
-      width: 8px;
-      height: 8px;
+      width: 8px; height: 8px;
       border-radius: 50%;
       background: #888;
       transition: background 0.3s;
@@ -76,6 +66,7 @@
       max-width: 720px;
     }
 
+    /* ── Text card ── */
     textarea {
       width: 100%;
       height: 280px;
@@ -110,7 +101,7 @@
       cursor: pointer;
       transition: opacity 0.15s, transform 0.1s;
     }
-    button:active { transform: scale(0.97); }
+    button:active   { transform: scale(0.97); }
     button:disabled { opacity: 0.4; cursor: default; }
 
     #btn-paste  { background: #0f3460; color: #a0c4ff; }
@@ -118,6 +109,58 @@
     #btn-clear  { background: #2a1a2e; color: #cc88ff; }
     #btn-logout { flex: none; min-width: auto; padding: 0.3rem 0.75rem; font-size: 0.8rem; background: #2a1a2e; color: #cc88ff; }
 
+    #last-update { font-size: 0.75rem; color: #666; margin-top: 0.5rem; text-align: right; }
+
+    /* ── File card ── */
+    #drop-zone {
+      border: 2px dashed #0f3460;
+      border-radius: 8px;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    #drop-zone:hover,
+    #drop-zone.drag-over {
+      border-color: #a0c4ff;
+      background: #0d1b2a;
+    }
+    #drop-zone p   { font-size: 0.9rem; color: #888; pointer-events: none; }
+    #drop-zone span { color: #a0c4ff; }
+
+    #file-info {
+      display: none;
+      margin-top: 1rem;
+      background: #0d1b2a;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      display: none;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    #file-info.visible { display: flex; }
+    #file-details { flex: 1; min-width: 0; }
+    #file-name { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #file-size { font-size: 0.8rem; color: #888; }
+    #btn-download {
+      flex: none;
+      min-width: auto;
+      padding: 0.45rem 1rem;
+      background: #0f3460;
+      color: #a0c4ff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    #btn-download:hover { opacity: 0.8; }
+
+    #file-input { display: none; }
+
+    /* ── Toast ── */
     #toast {
       position: fixed;
       bottom: 1.5rem;
@@ -133,13 +176,6 @@
       pointer-events: none;
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-    #last-update {
-      font-size: 0.75rem;
-      color: #666;
-      margin-top: 0.5rem;
-      text-align: right;
-    }
   </style>
 </head>
 <body>
@@ -159,6 +195,7 @@
     <span id="status-text"></span>
   </div>
 
+  <!-- Text card -->
   <div class="card">
     <textarea id="content"></textarea>
     <div id="last-update"></div>
@@ -169,67 +206,114 @@
     </div>
   </div>
 
+  <!-- File card -->
+  <div class="card">
+    <div id="drop-zone">
+      <p><span id="drop-hint-main"></span><br><small id="drop-hint-sub"></small></p>
+    </div>
+    <input type="file" id="file-input" />
+    <div id="file-info">
+      <div id="file-details">
+        <span id="file-name"></span>
+        <span id="file-size"></span>
+      </div>
+      <a href="/download" id="btn-download" download></a>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
   <script>
     // ------------------------------------------------------------------
     // Translations
     // ------------------------------------------------------------------
+    const MAX_FILE_MB    = {{MAX_FILE_MB}};
+    const MAX_CONTENT_KB = {{MAX_CONTENT_KB}};
+
     const T = {
       de: {
-        placeholder:       'Hier Text eingeben oder einfügen…',
-        btnPaste:          'Aus Zwischenablage einfügen',
-        btnCopy:           'In Zwischenablage kopieren',
-        btnClear:          'Leeren',
-        btnLogout:         'Abmelden',
-        statusConnecting:  'Verbinde…',
-        statusConnected:   'Verbunden',
-        statusDisconnected:'Getrennt – verbinde erneut…',
-        toastUpdated:      'Inhalt aktualisiert',
-        toastPasted:       'Eingefügt und synchronisiert',
-        toastCopied:       'In Zwischenablage kopiert',
-        toastDenied:       'Zugriff auf Zwischenablage verweigert',
-        toastCopyFail:     'Kopieren fehlgeschlagen',
-        toastTooLarge:     `Inhalt zu groß (max {{MAX_CONTENT_KB}} KB)`,
-        lastUpdate:        'Zuletzt empfangen',
+        placeholder:        'Hier Text eingeben oder einfügen…',
+        btnPaste:           'Aus Zwischenablage einfügen',
+        btnCopy:            'In Zwischenablage kopieren',
+        btnClear:           'Leeren',
+        btnLogout:          'Abmelden',
+        btnDownload:        'Herunterladen',
+        statusConnecting:   'Verbinde…',
+        statusConnected:    'Verbunden',
+        statusDisconnected: 'Getrennt – verbinde erneut…',
+        toastUpdated:       'Inhalt aktualisiert',
+        toastPasted:        'Eingefügt und synchronisiert',
+        toastCopied:        'In Zwischenablage kopiert',
+        toastDenied:        'Zugriff auf Zwischenablage verweigert',
+        toastCopyFail:      'Kopieren fehlgeschlagen',
+        toastTooLarge:      `Inhalt zu groß (max ${MAX_CONTENT_KB} KB)`,
+        toastFileUploaded:  'Datei hochgeladen und synchronisiert',
+        toastFileReceived:  'Neue Datei empfangen',
+        toastFileTooLarge:  `Datei zu groß (max ${MAX_FILE_MB} MB)`,
+        toastFileError:     'Upload fehlgeschlagen',
+        dropHintMain:       'Datei hier ablegen',
+        dropHintSub:        `oder klicken zum Auswählen (max ${MAX_FILE_MB} MB)`,
+        lastUpdate:         'Zuletzt empfangen',
       },
       en: {
-        placeholder:       'Type or paste content here…',
-        btnPaste:          'Paste from clipboard',
-        btnCopy:           'Copy to clipboard',
-        btnClear:          'Clear',
-        btnLogout:         'Log out',
-        statusConnecting:  'Connecting…',
-        statusConnected:   'Connected',
-        statusDisconnected:'Disconnected – reconnecting…',
-        toastUpdated:      'Content updated',
-        toastPasted:       'Pasted and synced',
-        toastCopied:       'Copied to clipboard',
-        toastDenied:       'Clipboard access denied',
-        toastCopyFail:     'Copy failed',
-        toastTooLarge:     `Content too large (max {{MAX_CONTENT_KB}} KB)`,
-        lastUpdate:        'Last received',
+        placeholder:        'Type or paste content here…',
+        btnPaste:           'Paste from clipboard',
+        btnCopy:            'Copy to clipboard',
+        btnClear:           'Clear',
+        btnLogout:          'Log out',
+        btnDownload:        'Download',
+        statusConnecting:   'Connecting…',
+        statusConnected:    'Connected',
+        statusDisconnected: 'Disconnected – reconnecting…',
+        toastUpdated:       'Content updated',
+        toastPasted:        'Pasted and synced',
+        toastCopied:        'Copied to clipboard',
+        toastDenied:        'Clipboard access denied',
+        toastCopyFail:      'Copy failed',
+        toastTooLarge:      `Content too large (max ${MAX_CONTENT_KB} KB)`,
+        toastFileUploaded:  'File uploaded and synced',
+        toastFileReceived:  'New file received',
+        toastFileTooLarge:  `File too large (max ${MAX_FILE_MB} MB)`,
+        toastFileError:     'Upload failed',
+        dropHintMain:       'Drop file here',
+        dropHintSub:        `or click to select (max ${MAX_FILE_MB} MB)`,
+        lastUpdate:         'Last received',
       },
     };
 
     const DEFAULT_LANG = '{{DEFAULT_LANG}}';
     let lang = localStorage.getItem('clipboard-sync-lang') || DEFAULT_LANG;
+    let statusConnected = false;
 
-    function t(key) { return (T[lang] || T['de'])[key] || key; }
+    function t(key) { return (T[lang] || T.de)[key] || key; }
 
     function setLang(l) {
       lang = l;
       localStorage.setItem('clipboard-sync-lang', l);
       document.documentElement.lang = l;
-      document.getElementById('content').placeholder  = t('placeholder');
-      document.getElementById('btn-paste').textContent = t('btnPaste');
-      document.getElementById('btn-copy').textContent  = t('btnCopy');
-      document.getElementById('btn-clear').textContent = t('btnClear');
-      document.getElementById('btn-logout').textContent = t('btnLogout');
-      document.getElementById('status-text').textContent =
+      document.getElementById('content').placeholder        = t('placeholder');
+      document.getElementById('btn-paste').textContent      = t('btnPaste');
+      document.getElementById('btn-copy').textContent       = t('btnCopy');
+      document.getElementById('btn-clear').textContent      = t('btnClear');
+      document.getElementById('btn-logout').textContent     = t('btnLogout');
+      document.getElementById('btn-download').textContent   = t('btnDownload');
+      document.getElementById('drop-hint-main').textContent = t('dropHintMain');
+      document.getElementById('drop-hint-sub').textContent  = t('dropHintSub');
+      document.getElementById('status-text').textContent    =
         statusConnected ? t('statusConnected') : t('statusConnecting');
       document.querySelectorAll('.lang-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.lang === l));
+    }
+
+    // ------------------------------------------------------------------
+    // Toast
+    // ------------------------------------------------------------------
+    const toast = document.getElementById('toast');
+    function showToast(msg, color = '#4caf50') {
+      toast.textContent = msg;
+      toast.style.background = color;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
     }
 
     // ------------------------------------------------------------------
@@ -238,15 +322,7 @@
     const textarea   = document.getElementById('content');
     const statusDot  = document.getElementById('status-dot');
     const lastUpdate = document.getElementById('last-update');
-    const toast      = document.getElementById('toast');
-    let ws, sendTimer, statusConnected = false;
-
-    function showToast(msg, color = '#4caf50') {
-      toast.textContent = msg;
-      toast.style.background = color;
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2000);
-    }
+    let ws, sendTimer;
 
     function setStatus(connected) {
       statusConnected = connected;
@@ -258,18 +334,24 @@
     function connect() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       ws = new WebSocket(`${proto}://${location.host}/ws`);
-
       ws.onopen  = () => setStatus(true);
       ws.onclose = (e) => {
         setStatus(false);
         if (e.code === 4001) { location.href = '/login'; return; }
         setTimeout(connect, 3000);
       };
-
       ws.onmessage = (e) => {
         if (e.data.startsWith('__ERROR__:')) {
           const code = e.data.split(':')[1];
           if (code === 'TOO_LARGE') showToast(t('toastTooLarge'), '#f44336');
+          return;
+        }
+        if (e.data.startsWith('__FILE__|')) {
+          const parts = e.data.split('|');
+          const size  = parseInt(parts[parts.length - 1]);
+          const name  = parts.slice(1, -1).join('|');
+          showFileInfo(name, size);
+          showToast(t('toastFileReceived'));
           return;
         }
         textarea.value = e.data;
@@ -291,18 +373,14 @@
         textarea.value = text;
         if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
         showToast(t('toastPasted'));
-      } catch {
-        showToast(t('toastDenied'), '#f44336');
-      }
+      } catch { showToast(t('toastDenied'), '#f44336'); }
     });
 
     document.getElementById('btn-copy').addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(textarea.value);
         showToast(t('toastCopied'));
-      } catch {
-        showToast(t('toastCopyFail'), '#f44336');
-      }
+      } catch { showToast(t('toastCopyFail'), '#f44336'); }
     });
 
     document.getElementById('btn-clear').addEventListener('click', () => {
@@ -311,7 +389,62 @@
       lastUpdate.textContent = '';
     });
 
+    // ------------------------------------------------------------------
+    // File handling
+    // ------------------------------------------------------------------
+    const dropZone  = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    function formatSize(bytes) {
+      if (bytes < 1024)            return bytes + ' B';
+      if (bytes < 1024 * 1024)     return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function showFileInfo(name, size) {
+      document.getElementById('file-name').textContent = name;
+      document.getElementById('file-size').textContent = formatSize(size);
+      document.getElementById('btn-download').textContent = t('btnDownload');
+      // Update download filename hint
+      document.getElementById('btn-download').setAttribute('download', name);
+      document.getElementById('file-info').classList.add('visible');
+    }
+
+    async function uploadFile(file) {
+      if (file.size > MAX_FILE_MB * 1024 * 1024) {
+        showToast(t('toastFileTooLarge'), '#f44336');
+        return;
+      }
+      const form = new FormData();
+      form.append('file', file);
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: form });
+        if (res.status === 413) { showToast(t('toastFileTooLarge'), '#f44336'); return; }
+        if (!res.ok)            { showToast(t('toastFileError'),    '#f44336'); return; }
+        showFileInfo(file.name, file.size);
+        showToast(t('toastFileUploaded'));
+      } catch { showToast(t('toastFileError'), '#f44336'); }
+    }
+
+    // Click to open file dialog
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) uploadFile(e.target.files[0]);
+      fileInput.value = '';
+    });
+
+    // Drag & drop
+    dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+    });
+
+    // ------------------------------------------------------------------
     // Init
+    // ------------------------------------------------------------------
     setLang(lang);
     document.getElementById('status-text').textContent = t('statusConnecting');
     connect();

@@ -2,8 +2,8 @@ import os
 import secrets
 import time
 from collections import defaultdict
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -13,9 +13,10 @@ PASSWORD = os.environ.get("CLIPBOARD_PASSWORD", "").strip()
 if not PASSWORD:
     raise SystemExit("ERROR: CLIPBOARD_PASSWORD environment variable is required")
 
-SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "true").lower() == "true"
+SECURE_COOKIES  = os.environ.get("SECURE_COOKIES",  "true").lower() == "true"
 MAX_CONTENT_SIZE = int(os.environ.get("MAX_CONTENT_KB", "512")) * 1024
-DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "de").strip().lower()
+MAX_FILE_SIZE    = int(os.environ.get("MAX_FILE_MB",   "10"))  * 1024 * 1024
+DEFAULT_LANG     = os.environ.get("DEFAULT_LANG", "de").strip().lower()
 if DEFAULT_LANG not in ("de", "en"):
     DEFAULT_LANG = "de"
 
@@ -28,7 +29,7 @@ sessions: set[str] = set()
 # Login rate limiting  (5 attempts / 60 s per IP)
 # ---------------------------------------------------------------------------
 _login_attempts: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT = 5
+RATE_LIMIT  = 5
 RATE_WINDOW = 60  # seconds
 
 
@@ -58,30 +59,32 @@ def _authenticated(request: Request) -> bool:
 # ---------------------------------------------------------------------------
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
+def _render(filename: str) -> str:
+    return (Path(f"static/{filename}").read_text()
+            .replace("{{DEFAULT_LANG}}",   DEFAULT_LANG)
+            .replace("{{MAX_CONTENT_KB}}", str(MAX_CONTENT_SIZE // 1024))
+            .replace("{{MAX_FILE_MB}}",    str(MAX_FILE_SIZE    // (1024 * 1024))))
+
 
 @app.get("/")
 async def index(request: Request):
     if not _authenticated(request):
         return RedirectResponse("/login")
-    html = (Path("static/index.html").read_text()
-            .replace("{{DEFAULT_LANG}}", DEFAULT_LANG)
-            .replace("{{MAX_CONTENT_KB}}", str(MAX_CONTENT_SIZE // 1024)))
-    return HTMLResponse(html)
+    return HTMLResponse(_render("index.html"))
 
 
 @app.get("/login")
 async def login_page(request: Request):
     if _authenticated(request):
         return RedirectResponse("/")
-    html = Path("static/login.html").read_text().replace("{{DEFAULT_LANG}}", DEFAULT_LANG)
-    return HTMLResponse(html)
+    return HTMLResponse(_render("login.html"))
 
 
 @app.post("/login")
 async def login(request: Request):
     ip = _client_ip(request)
     if not _check_rate_limit(ip):
-        return HTMLResponse("Zu viele Versuche. Bitte warte eine Minute.", status_code=429)
+        return HTMLResponse("Too many attempts. Please wait a minute.", status_code=429)
 
     form = await request.form()
     password = str(form.get("password", ""))
@@ -93,12 +96,11 @@ async def login(request: Request):
     sessions.add(token)
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(
-        "session",
-        token,
+        "session", token,
         httponly=True,
         samesite="strict",
         secure=SECURE_COOKIES,
-        max_age=86400 * 7,  # 7 days
+        max_age=86400 * 7,
     )
     return response
 
@@ -114,18 +116,60 @@ async def logout(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# File upload / download
+# ---------------------------------------------------------------------------
+@app.post("/upload")
+async def upload(request: Request, file: UploadFile = File(...)):
+    if not _authenticated(request):
+        return Response(status_code=401)
+
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        return Response("TOO_LARGE", status_code=413)
+
+    filename = Path(file.filename or "file").name  # strip any path components
+    mime     = file.content_type or "application/octet-stream"
+
+    manager.store_file(filename, data, mime)
+    await manager.broadcast_all(f"__FILE__|{filename}|{len(data)}")
+    return Response(status_code=204)
+
+
+@app.get("/download")
+async def download(request: Request):
+    if not _authenticated(request):
+        return Response(status_code=401)
+    if not manager.current_file:
+        return Response(status_code=404)
+
+    f = manager.current_file
+    return Response(
+        content=f["data"],
+        media_type=f["mime"],
+        headers={"Content-Disposition": f'attachment; filename="{f["name"]}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # WebSocket clipboard sync
 # ---------------------------------------------------------------------------
 class ConnectionManager:
     def __init__(self) -> None:
         self.connections: list[WebSocket] = []
         self.current_content: str = ""
+        self.current_file: dict | None = None
+
+    def store_file(self, name: str, data: bytes, mime: str) -> None:
+        self.current_file = {"name": name, "data": data, "mime": mime, "size": len(data)}
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
         self.connections.append(ws)
         if self.current_content:
             await ws.send_text(self.current_content)
+        if self.current_file:
+            f = self.current_file
+            await ws.send_text(f"__FILE__|{f['name']}|{f['size']}")
 
     def disconnect(self, ws: WebSocket) -> None:
         self.connections = [c for c in self.connections if c is not ws]
@@ -135,6 +179,10 @@ class ConnectionManager:
         for conn in self.connections:
             if conn is not sender:
                 await conn.send_text(message)
+
+    async def broadcast_all(self, message: str) -> None:
+        for conn in self.connections:
+            await conn.send_text(message)
 
 
 manager = ConnectionManager()
