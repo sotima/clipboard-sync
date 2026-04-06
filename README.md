@@ -28,7 +28,7 @@ Built with **FastAPI** and **WebSockets**, designed to run as a **Docker contain
 | Login | Clipboard |
 |-------|-----------|
 | Clean password-protected login page | Textarea with copy/paste buttons and live sync status |
-|<img width="250" height="250" alt="image" src="https://github.com/sotima/clipboard-sync/img/login.png" />
+|![LogIn page](https://github.com/sotima/clipboard-sync/blob/main/img/login.png?raw=true)|![Main page](https://github.com/sotima/clipboard-sync/blob/main/img/clipboard.png?raw=true)
 
 
 ---
