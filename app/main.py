@@ -1,10 +1,12 @@
+import asyncio
 import os
 import secrets
 import time
 from collections import defaultdict
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pathlib import Path
+from sse_starlette.sse import EventSourceResponse
 
 # ---------------------------------------------------------------------------
 # Config
@@ -13,7 +15,7 @@ PASSWORD = os.environ.get("CLIPBOARD_PASSWORD", "").strip()
 if not PASSWORD:
     raise SystemExit("ERROR: CLIPBOARD_PASSWORD environment variable is required")
 
-SECURE_COOKIES  = os.environ.get("SECURE_COOKIES",  "true").lower() == "true"
+SECURE_COOKIES   = os.environ.get("SECURE_COOKIES",  "true").lower() == "true"
 MAX_CONTENT_SIZE = int(os.environ.get("MAX_CONTENT_KB", "512")) * 1024
 MAX_FILE_SIZE    = int(os.environ.get("MAX_FILE_MB",   "10"))  * 1024 * 1024
 DEFAULT_LANG     = os.environ.get("DEFAULT_LANG", "de").strip().lower()
@@ -151,57 +153,81 @@ async def download(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# WebSocket clipboard sync
+# SSE clipboard sync
 # ---------------------------------------------------------------------------
-class ConnectionManager:
+class SSEManager:
     def __init__(self) -> None:
-        self.connections: list[WebSocket] = []
+        self.queues: dict[str, asyncio.Queue] = {}
         self.current_content: str = ""
         self.current_file: dict | None = None
 
     def store_file(self, name: str, data: bytes, mime: str) -> None:
         self.current_file = {"name": name, "data": data, "mime": mime, "size": len(data)}
 
-    async def connect(self, ws: WebSocket) -> None:
-        await ws.accept()
-        self.connections.append(ws)
-        if self.current_content:
-            await ws.send_text(self.current_content)
-        if self.current_file:
-            f = self.current_file
-            await ws.send_text(f"__FILE__|{f['name']}|{f['size']}")
+    def add_client(self, client_id: str) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue()
+        self.queues[client_id] = q
+        return q
 
-    def disconnect(self, ws: WebSocket) -> None:
-        self.connections = [c for c in self.connections if c is not ws]
+    def remove_client(self, client_id: str) -> None:
+        self.queues.pop(client_id, None)
 
-    async def broadcast(self, message: str, sender: WebSocket) -> None:
+    async def broadcast(self, message: str, sender_id: str | None = None) -> None:
         self.current_content = message
-        for conn in self.connections:
-            if conn is not sender:
-                await conn.send_text(message)
+        for cid, q in list(self.queues.items()):
+            if cid != sender_id:
+                await q.put(message)
 
     async def broadcast_all(self, message: str) -> None:
-        for conn in self.connections:
-            await conn.send_text(message)
+        for q in list(self.queues.values()):
+            await q.put(message)
 
 
-manager = ConnectionManager()
+manager = SSEManager()
 
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    token = websocket.cookies.get("session")
-    if not token or token not in sessions:
-        await websocket.close(code=4001)
-        return
+@app.get("/events")
+async def sse_events(request: Request):
+    if not _authenticated(request):
+        return Response(status_code=401)
 
-    await manager.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            if len(data.encode()) > MAX_CONTENT_SIZE:
-                await websocket.send_text("__ERROR__:TOO_LARGE")
-                continue
-            await manager.broadcast(data, websocket)
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+    client_id = secrets.token_hex(16)
+    queue = manager.add_client(client_id)
+
+    # Preload current state into queue so new clients get it immediately
+    if manager.current_content:
+        await queue.put(manager.current_content)
+    if manager.current_file:
+        f = manager.current_file
+        await queue.put(f"__FILE__|{f['name']}|{f['size']}")
+
+    async def event_generator():
+        yield {"event": "init", "data": client_id}
+        try:
+            while True:
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield {"data": message}
+                except asyncio.TimeoutError:
+                    # keepalive ping so proxies don't close the connection
+                    yield {"event": "ping", "data": ""}
+        finally:
+            manager.remove_client(client_id)
+
+    return EventSourceResponse(event_generator())
+
+
+@app.post("/update")
+async def update_content(request: Request):
+    if not _authenticated(request):
+        return Response(status_code=401)
+
+    form = await request.form()
+    content = str(form.get("content", ""))
+    client_id = str(form.get("client_id", ""))
+
+    if len(content.encode()) > MAX_CONTENT_SIZE:
+        return Response("TOO_LARGE", status_code=413)
+
+    await manager.broadcast(content, sender_id=client_id)
+    return Response(status_code=204)

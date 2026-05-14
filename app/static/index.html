@@ -317,12 +317,13 @@
     }
 
     // ------------------------------------------------------------------
-    // WebSocket
+    // SSE + HTTP POST
     // ------------------------------------------------------------------
     const textarea   = document.getElementById('content');
     const statusDot  = document.getElementById('status-dot');
     const lastUpdate = document.getElementById('last-update');
-    let ws, sendTimer;
+    let clientId = null;
+    let sendTimer;
 
     function setStatus(connected) {
       statusConnected = connected;
@@ -331,47 +332,54 @@
         connected ? t('statusConnected') : t('statusDisconnected');
     }
 
+    function handleMessage(data) {
+      if (data.startsWith('__FILE__|')) {
+        const parts = data.split('|');
+        const size  = parseInt(parts[parts.length - 1]);
+        const name  = parts.slice(1, -1).join('|');
+        showFileInfo(name, size);
+        showToast(t('toastFileReceived'));
+        return;
+      }
+      textarea.value = data;
+      lastUpdate.textContent = `${t('lastUpdate')}: ${new Date().toLocaleTimeString()}`;
+      showToast(t('toastUpdated'));
+    }
+
     function connect() {
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${proto}://${location.host}/ws`);
-      ws.onopen  = () => setStatus(true);
-      ws.onclose = (e) => {
+      const es = new EventSource('/events');
+      es.addEventListener('init', (e) => {
+        clientId = e.data;
+        setStatus(true);
+      });
+      es.addEventListener('message', (e) => handleMessage(e.data));
+      es.onerror = () => {
         setStatus(false);
-        if (e.code === 4001) { location.href = '/login'; return; }
-        setTimeout(connect, 3000);
+        // If we never received an init event, session is likely expired
+        if (!clientId) setTimeout(() => { location.href = '/login'; }, 2000);
       };
-      ws.onmessage = (e) => {
-        if (e.data.startsWith('__ERROR__:')) {
-          const code = e.data.split(':')[1];
-          if (code === 'TOO_LARGE') showToast(t('toastTooLarge'), '#f44336');
-          return;
-        }
-        if (e.data.startsWith('__FILE__|')) {
-          const parts = e.data.split('|');
-          const size  = parseInt(parts[parts.length - 1]);
-          const name  = parts.slice(1, -1).join('|');
-          showFileInfo(name, size);
-          showToast(t('toastFileReceived'));
-          return;
-        }
-        textarea.value = e.data;
-        lastUpdate.textContent = `${t('lastUpdate')}: ${new Date().toLocaleTimeString()}`;
-        showToast(t('toastUpdated'));
-      };
+    }
+
+    async function sendContent(content) {
+      const form = new FormData();
+      form.append('content', content);
+      if (clientId) form.append('client_id', clientId);
+      try {
+        const res = await fetch('/update', { method: 'POST', body: form });
+        if (res.status === 413) showToast(t('toastTooLarge'), '#f44336');
+      } catch { /* ignore – SSE reconnect will restore state */ }
     }
 
     textarea.addEventListener('input', () => {
       clearTimeout(sendTimer);
-      sendTimer = setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(textarea.value);
-      }, 400);
+      sendTimer = setTimeout(() => sendContent(textarea.value), 400);
     });
 
     document.getElementById('btn-paste').addEventListener('click', async () => {
       try {
         const text = await navigator.clipboard.readText();
         textarea.value = text;
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
+        await sendContent(text);
         showToast(t('toastPasted'));
       } catch { showToast(t('toastDenied'), '#f44336'); }
     });
@@ -385,7 +393,7 @@
 
     document.getElementById('btn-clear').addEventListener('click', () => {
       textarea.value = '';
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send('');
+      sendContent('');
       lastUpdate.textContent = '';
     });
 
