@@ -2,7 +2,7 @@
 
 A lightweight, self-hosted clipboard sharing tool that works across any device with a browser — no software installation required.
 
-Built with **FastAPI** and **WebSockets**, designed to run as a **Docker container**.
+Built with **FastAPI** and **Server-Sent Events**, designed to run as a **Docker container**.
 
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
@@ -13,7 +13,7 @@ Built with **FastAPI** and **WebSockets**, designed to run as a **Docker contain
 ## Features
 
 - **Browser-based** — works on any OS, no client software needed
-- **Real-time sync** — content appears instantly on all connected clients via WebSockets
+- **Real-time sync** — content appears instantly on all connected clients via Server-Sent Events
 - **Secure** — password login, session cookies (httponly, samesite, secure), rate limiting on login attempts
 - **Configurable** — password, cookie security and upload limit via environment variables
 - **File transfer** — share files via drag & drop or file dialog, separate size limit via `MAX_FILE_MB`
@@ -109,7 +109,7 @@ Example with Pangolin: add a new tunnel resource pointing to `http://<docker-hos
 | Timing-safe comparison | `secrets.compare_digest()` prevents timing attacks |
 | Session cookie | `httponly`, `samesite=strict`, `secure` (configurable), 7-day expiry |
 | Rate limiting | Max 5 login attempts per IP per 60 seconds |
-| WebSocket auth | Session cookie verified before accepting the WS connection |
+| SSE auth | Session cookie verified before opening the SSE stream |
 | Payload limit | Configurable via `MAX_CONTENT_KB` (default 512 KB) |
 | No API docs | `/docs`, `/redoc` and `/openapi.json` are disabled |
 | `.env` excluded | `.gitignore` prevents accidentally committing secrets |
